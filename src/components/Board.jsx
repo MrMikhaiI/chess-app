@@ -1,13 +1,16 @@
-import React from 'react'
+import React, { useRef } from 'react'
 import Square from './Square.jsx'
+import DraggablePiece from './DraggablePiece.jsx'
 import PromotionModal from './PromotionModal.jsx'
 import styles from './Board.module.css'
 
 export default function Board({
   board, selectedSquare, legalMoves, lastMove,
   currentPlayer, inCheck, onSquareClick,
+  onDragStart, onDragEnd,
   promotionPending, onPromotion, gameStatus
 }) {
+  const boardRef = useRef(null)
   const legalMoveSet = new Set(legalMoves.map(m => `${m.to[0]}-${m.to[1]}`))
 
   const isLastMove = (r, c) =>
@@ -29,7 +32,7 @@ export default function Board({
             <span key={n} className={styles.coordRank}>{n}</span>
           ))}
         </div>
-        <div className={styles.board}>
+        <div className={styles.board} ref={boardRef}>
           {board.map((row, r) =>
             row.map((piece, c) => (
               <Square
@@ -44,7 +47,28 @@ export default function Board({
                 isCheck={isKingInCheck(r, c)}
                 onClick={() => onSquareClick(r, c)}
                 disabled={gameStatus !== 'playing'}
-              />
+              >
+                {piece && piece.color === currentPlayer && gameStatus === 'playing' && (
+                  <DraggablePiece
+                    type={piece.type}
+                    color={piece.color}
+                    row={r}
+                    col={c}
+                    onDragStart={onDragStart}
+                    onDragEnd={onDragEnd}
+                    boardRef={boardRef}
+                  />
+                )}
+                {piece && (piece.color !== currentPlayer || gameStatus !== 'playing') && (
+                  <img
+                    src={`https://lichess1.org/assets/piece/cburnett/${piece.color === 'white' ? 'w' : 'b'}${{ king:'K', queen:'Q', rook:'R', bishop:'B', knight:'N', pawn:'P' }[piece.type]}.svg`}
+                    alt={`${piece.color} ${piece.type}`}
+                    draggable={false}
+                    style={{ width:'88%', height:'88%', objectFit:'contain', display:'block',
+                      filter:'drop-shadow(0 2px 4px rgba(0,0,0,0.45))', userSelect:'none', pointerEvents:'none' }}
+                  />
+                )}
+              </Square>
             ))
           )}
         </div>
@@ -55,10 +79,7 @@ export default function Board({
         </div>
       </div>
       {promotionPending && (
-        <PromotionModal
-          color={promotionPending.color}
-          onSelect={onPromotion}
-        />
+        <PromotionModal color={promotionPending.color} onSelect={onPromotion} />
       )}
     </div>
   )

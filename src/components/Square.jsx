@@ -1,9 +1,8 @@
 import React from 'react'
-import Piece from './Piece.jsx'
 import styles from './Square.module.css'
 
 export default function Square({
-  piece, row, col, isLight, isSelected, isLegalMove, isLastMove, isCheck, onClick, disabled
+  piece, row, col, isLight, isSelected, isLegalMove, isLastMove, isCheck, onClick, disabled, children
 }) {
   const squareClass = [
     styles.square,
@@ -15,9 +14,13 @@ export default function Square({
   ].filter(Boolean).join(' ')
 
   return (
-    <button
+    <div
+      data-square={`${row}-${col}`}
       className={squareClass}
       onClick={onClick}
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onClick() }}
       aria-label={piece
         ? `${piece.color} ${piece.type} at ${String.fromCharCode(97+col)}${8-row}`
         : `${String.fromCharCode(97+col)}${8-row}`}
@@ -25,7 +28,7 @@ export default function Square({
       {isLegalMove && (
         <span className={piece ? styles.captureDot : styles.moveDot} aria-hidden="true" />
       )}
-      {piece && <Piece type={piece.type} color={piece.color} />}
-    </button>
+      {children}
+    </div>
   )
 }

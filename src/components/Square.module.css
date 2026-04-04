@@ -11,6 +11,7 @@
   padding: 0;
   border: none;
   border-radius: 0;
+  outline: none;
 }
 
 .light { background: #f0d9b5; }
@@ -25,10 +26,10 @@
 .check { background: radial-gradient(ellipse at center, #ff4444 0%, #e94560 60%, transparent 100%) !important; }
 
 .square:hover:not(.disabled) { filter: brightness(1.08); }
-.disabled { cursor: default; }
+.disabled { cursor: default; pointer-events: none; }
 
 .square:hover:not(.disabled) img {
-  transform: scale(1.07);
+  transform: scale(1.05);
 }
 
 .moveDot {

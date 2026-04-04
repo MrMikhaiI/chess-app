@@ -1,11 +1,33 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import Board from './components/Board.jsx'
 import GameInfo from './components/GameInfo.jsx'
+import OpeningBanner from './components/OpeningBanner.jsx'
 import { createInitialBoard } from './engine/board.js'
 import { getLegalMoves } from './engine/moves.js'
 import { isInCheck, getGameStatus } from './engine/gameState.js'
 import { cloneBoard } from './engine/board.js'
+import { detectOpening } from './engine/openings.js'
 import styles from './App.module.css'
+
+// canvas-confetti via CDN — loaded lazily on win
+let confettiLoaded = false
+let confettiFn = null
+function fireConfetti() {
+  if (confettiFn) {
+    confettiFn({ particleCount: 180, spread: 90, origin: { y: 0.55 }, colors: ['#b58a3c','#f0d9b5','#ffffff','#e94560','#4a90d9'] })
+    setTimeout(() => confettiFn({ particleCount: 80, spread: 120, origin: { y: 0.4 }, startVelocity: 20 }), 400)
+    return
+  }
+  if (confettiLoaded) return
+  confettiLoaded = true
+  const script = document.createElement('script')
+  script.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js'
+  script.onload = () => {
+    confettiFn = window.confetti
+    fireConfetti()
+  }
+  document.head.appendChild(script)
+}
 
 export default function App() {
   const [board, setBoard] = useState(() => createInitialBoard())
@@ -22,19 +44,23 @@ export default function App() {
   const [gameStatus, setGameStatus] = useState('playing')
   const [capturedPieces, setCapturedPieces] = useState({ white: [], black: [] })
   const [moveHistory, setMoveHistory] = useState([])
+  const [opening, setOpening] = useState(null)
+  // drag state
+  const dragSource = useRef(null)
 
-  // Single source-of-truth ref-free helper — reads latest state via setters
+  // Fire confetti when game ends in checkmate
+  useEffect(() => {
+    if (gameStatus === 'checkmate') {
+      setTimeout(fireConfetti, 200)
+    }
+  }, [gameStatus])
+
   const finishMove = useCallback((
     newBoard, newCastling, newEnPassant,
     captured, fromRow, fromCol, toRow, toCol, movingColor
   ) => {
     const nextPlayer = movingColor === 'white' ? 'black' : 'white'
-    const nextState = {
-      board: newBoard,
-      currentPlayer: nextPlayer,
-      castlingRights: newCastling,
-      enPassantTarget: newEnPassant
-    }
+    const nextState = { board: newBoard, currentPlayer: nextPlayer, castlingRights: newCastling, enPassantTarget: newEnPassant }
     const status = getGameStatus(nextState)
 
     setBoard(newBoard)
@@ -47,129 +73,134 @@ export default function App() {
     setGameStatus(status)
 
     if (captured) {
-      setCapturedPieces(prev => ({
-        ...prev,
-        [movingColor]: [...prev[movingColor], captured]
-      }))
+      setCapturedPieces(prev => ({ ...prev, [movingColor]: [...prev[movingColor], captured] }))
     }
 
-    setMoveHistory(prev => [
-      ...prev,
-      { from: [fromRow, fromCol], to: [toRow, toCol] }
-    ])
+    setMoveHistory(prev => {
+      const updated = [...prev, { from: [fromRow, fromCol], to: [toRow, toCol] }]
+      setOpening(detectOpening(updated))
+      return updated
+    })
   }, [])
 
-  const handleSquareClick = useCallback((row, col) => {
-    // All state is read via functional updaters or captured in closure at call time;
-    // we pass all needed values explicitly to avoid stale closure issues.
-    setBoard(prevBoard => prevBoard) // no-op read; actual logic below
+  const executeMove = useCallback((selRow, selCol, toRow, toCol, currentBoard, curPlayer, curCastling, curEnPassant, curLegalMoves) => {
+    const move = curLegalMoves.find(m => m.to[0] === toRow && m.to[1] === toCol)
+    if (!move) return false
 
-    // We need fresh state — use a ref-like pattern with a single setState batch.
-    // React batches updates; we read state directly from the closure because
-    // handleSquareClick is recreated whenever any dependency changes.
-  }, []) // intentional empty deps — handler is rebuilt on each render via the wrapper below
+    const newBoard = cloneBoard(currentBoard)
+    const movingPiece = { ...newBoard[selRow][selCol] }
+    let captured = newBoard[toRow][toCol]
+    let newEnPassant = null
+    const newCastling = { white: { ...curCastling.white }, black: { ...curCastling.black } }
 
-  // Wrapper that always has fresh state — recreated on every relevant state change
+    if (move.enPassant) {
+      const capturedRow = curPlayer === 'white' ? toRow + 1 : toRow - 1
+      captured = newBoard[capturedRow][toCol]
+      newBoard[capturedRow][toCol] = null
+    }
+    if (move.castling) {
+      const rookCol = move.castling === 'kingSide' ? 7 : 0
+      const newRookCol = move.castling === 'kingSide' ? toCol - 1 : toCol + 1
+      const castleRow = curPlayer === 'white' ? 7 : 0
+      newBoard[castleRow][newRookCol] = { ...newBoard[castleRow][rookCol] }
+      newBoard[castleRow][rookCol] = null
+    }
+    if (movingPiece.type === 'king') newCastling[curPlayer] = { kingSide: false, queenSide: false }
+    if (movingPiece.type === 'rook') {
+      if (selCol === 0) newCastling[curPlayer].queenSide = false
+      if (selCol === 7) newCastling[curPlayer].kingSide = false
+    }
+    const oppColor = curPlayer === 'white' ? 'black' : 'white'
+    if (toRow === (oppColor === 'white' ? 7 : 0)) {
+      if (toCol === 0) newCastling[oppColor].queenSide = false
+      if (toCol === 7) newCastling[oppColor].kingSide = false
+    }
+    if (movingPiece.type === 'pawn' && Math.abs(toRow - selRow) === 2) {
+      newEnPassant = [(selRow + toRow) / 2, toCol]
+    }
+
+    movingPiece.hasMoved = true
+    newBoard[toRow][toCol] = movingPiece
+    newBoard[selRow][selCol] = null
+
+    if (movingPiece.type === 'pawn' && (toRow === 0 || toRow === 7)) {
+      setBoard(newBoard)
+      setPromotionPending({ row: toRow, col: toCol, color: curPlayer, newCastling, newEnPassant, captured, selRow, selCol })
+      setLastMove({ from: [selRow, selCol], to: [toRow, toCol] })
+      setCastlingRights(newCastling)
+      setEnPassantTarget(newEnPassant)
+      setSelectedSquare(null)
+      setLegalMoves([])
+      if (captured) setCapturedPieces(prev => ({ ...prev, [curPlayer]: [...prev[curPlayer], captured] }))
+      return true
+    }
+
+    finishMove(newBoard, newCastling, newEnPassant, captured, selRow, selCol, toRow, toCol, curPlayer)
+    return true
+  }, [finishMove])
+
   const onSquareClick = (row, col) => {
     if (gameStatus !== 'playing') return
-
     const piece = board[row][col]
+    const gameState = { board, currentPlayer, castlingRights, enPassantTarget }
 
     if (selectedSquare) {
       const [selRow, selCol] = selectedSquare
-      const gameState = { board, currentPlayer, castlingRights, enPassantTarget }
-      const move = legalMoves.find(m => m.to[0] === row && m.to[1] === col)
+      const moved = executeMove(selRow, selCol, row, col, board, currentPlayer, castlingRights, enPassantTarget, legalMoves)
+      if (moved) return
 
-      if (move) {
-        // Execute the move
-        const newBoard = cloneBoard(board)
-        const movingPiece = { ...newBoard[selRow][selCol] }
-        let captured = newBoard[row][col]
-        let newEnPassant = null
-        const newCastling = {
-          white: { ...castlingRights.white },
-          black: { ...castlingRights.black }
-        }
-
-        if (move.enPassant) {
-          const capturedRow = currentPlayer === 'white' ? row + 1 : row - 1
-          captured = newBoard[capturedRow][col]
-          newBoard[capturedRow][col] = null
-        }
-
-        if (move.castling) {
-          const rookCol = move.castling === 'kingSide' ? 7 : 0
-          const newRookCol = move.castling === 'kingSide' ? col - 1 : col + 1
-          const castleRow = currentPlayer === 'white' ? 7 : 0
-          newBoard[castleRow][newRookCol] = { ...newBoard[castleRow][rookCol] }
-          newBoard[castleRow][rookCol] = null
-        }
-
-        if (movingPiece.type === 'king') {
-          newCastling[currentPlayer] = { kingSide: false, queenSide: false }
-        }
-        if (movingPiece.type === 'rook') {
-          if (selCol === 0) newCastling[currentPlayer].queenSide = false
-          if (selCol === 7) newCastling[currentPlayer].kingSide = false
-        }
-        // If opponent's rook is captured
-        const oppColor = currentPlayer === 'white' ? 'black' : 'white'
-        if (row === (oppColor === 'white' ? 7 : 0)) {
-          if (col === 0) newCastling[oppColor].queenSide = false
-          if (col === 7) newCastling[oppColor].kingSide = false
-        }
-
-        if (movingPiece.type === 'pawn' && Math.abs(row - selRow) === 2) {
-          newEnPassant = [(selRow + row) / 2, col]
-        }
-
-        movingPiece.hasMoved = true
-        newBoard[row][col] = movingPiece
-        newBoard[selRow][selCol] = null
-
-        // Pawn promotion
-        if (movingPiece.type === 'pawn' && (row === 0 || row === 7)) {
-          setBoard(newBoard)
-          setPromotionPending({ row, col, color: currentPlayer, newCastling, newEnPassant, captured, selRow, selCol })
-          setLastMove({ from: [selRow, selCol], to: [row, col] })
-          setCastlingRights(newCastling)
-          setEnPassantTarget(newEnPassant)
-          setSelectedSquare(null)
-          setLegalMoves([])
-          if (captured) {
-            setCapturedPieces(prev => ({
-              ...prev,
-              [currentPlayer]: [...prev[currentPlayer], captured]
-            }))
-          }
-          return
-        }
-
-        finishMove(newBoard, newCastling, newEnPassant, captured, selRow, selCol, row, col, currentPlayer)
-        return
-      }
-
-      // Clicked own piece — reselect
       if (piece && piece.color === currentPlayer) {
-        const gameState = { board, currentPlayer, castlingRights, enPassantTarget }
         setSelectedSquare([row, col])
         setLegalMoves(getLegalMoves(gameState, row, col))
         return
       }
-
-      // Clicked empty/invalid — deselect
       setSelectedSquare(null)
       setLegalMoves([])
       return
     }
 
-    // Nothing selected yet
     if (piece && piece.color === currentPlayer) {
-      const gameState = { board, currentPlayer, castlingRights, enPassantTarget }
       setSelectedSquare([row, col])
       setLegalMoves(getLegalMoves(gameState, row, col))
     }
   }
+
+  // Drag & drop handlers
+  const onDragStart = useCallback((row, col) => {
+    dragSource.current = { row, col }
+    // Compute legal moves at drag start so we can show them
+    setSelectedSquare([row, col])
+    setLegalMoves(prev => {
+      // use functional update to avoid stale board — compute fresh
+      return prev
+    })
+    // We need fresh board/state here — set selected which triggers legalMoves via the state
+    setBoard(prevBoard => {
+      const gameState = { board: prevBoard, currentPlayer, castlingRights, enPassantTarget }
+      const moves = getLegalMoves(gameState, row, col)
+      setLegalMoves(moves)
+      return prevBoard
+    })
+  }, [currentPlayer, castlingRights, enPassantTarget])
+
+  const onDragEnd = useCallback((toRow, toCol) => {
+    if (toRow === null || !dragSource.current) {
+      dragSource.current = null
+      setSelectedSquare(null)
+      setLegalMoves([])
+      return
+    }
+    const { row: selRow, col: selCol } = dragSource.current
+    dragSource.current = null
+
+    setBoard(prevBoard => {
+      setLegalMoves(prevMoves => {
+        executeMove(selRow, selCol, toRow, toCol, prevBoard, currentPlayer, castlingRights, enPassantTarget, prevMoves)
+        return []
+      })
+      return prevBoard
+    })
+  }, [currentPlayer, castlingRights, enPassantTarget, executeMove])
 
   const handlePromotion = (pieceType) => {
     if (!promotionPending) return
@@ -192,6 +223,7 @@ export default function App() {
     setGameStatus('playing')
     setCapturedPieces({ white: [], black: [] })
     setMoveHistory([])
+    setOpening(null)
   }
 
   const inCheck = gameStatus === 'playing' &&
@@ -200,12 +232,18 @@ export default function App() {
   return (
     <div className={styles.app}>
       <header className={styles.header}>
-        <svg className={styles.logo} viewBox="0 0 40 40" fill="none" aria-label="Chess">
-          <rect width="40" height="40" rx="8" fill="#b58a3c"/>
-          <text x="7" y="29" fontSize="24" fill="#1a1510">♛</text>
+        {/* New expressive SVG logo — stylised knight head */}
+        <svg className={styles.logo} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Chess">
+          <rect width="40" height="40" rx="8" fill="#1a1510"/>
+          <rect x="1" y="1" width="38" height="38" rx="7" stroke="#b58a3c" strokeWidth="1.5" fill="none"/>
+          {/* Knight silhouette */}
+          <path d="M13 30 L13 26 C13 26 10 24 10 20 C10 15 14 11 18 10 C18 10 17 12 18 13 C19 14 22 13 23 15 C24 17 22 18 21 19 L27 19 L27 30 Z" fill="#b58a3c"/>
+          <circle cx="16" cy="15" r="1.2" fill="#1a1510"/>
+          <line x1="13" y1="30" x2="27" y2="30" stroke="#b58a3c" strokeWidth="2" strokeLinecap="round"/>
         </svg>
         <h1 className={styles.title}>Chess</h1>
       </header>
+      <OpeningBanner opening={opening} />
       <main className={styles.main}>
         <GameInfo
           currentPlayer={currentPlayer}
@@ -223,6 +261,8 @@ export default function App() {
           currentPlayer={currentPlayer}
           inCheck={inCheck}
           onSquareClick={onSquareClick}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
           promotionPending={promotionPending}
           onPromotion={handlePromotion}
           gameStatus={gameStatus}
