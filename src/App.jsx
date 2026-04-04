@@ -2,31 +2,26 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import Board from './components/Board.jsx'
 import GameInfo from './components/GameInfo.jsx'
 import OpeningBanner from './components/OpeningBanner.jsx'
+import BoardControls from './components/BoardControls.jsx'
 import { createInitialBoard } from './engine/board.js'
 import { getLegalMoves } from './engine/moves.js'
 import { isInCheck, getGameStatus } from './engine/gameState.js'
 import { cloneBoard } from './engine/board.js'
 import { detectOpening } from './engine/openings.js'
+import { useSound } from './hooks/useSound.js'
 import styles from './App.module.css'
 
-// canvas-confetti via CDN — loaded lazily on win
-let confettiLoaded = false
 let confettiFn = null
 function fireConfetti() {
-  if (confettiFn) {
-    confettiFn({ particleCount: 180, spread: 90, origin: { y: 0.55 }, colors: ['#b58a3c','#f0d9b5','#ffffff','#e94560','#4a90d9'] })
+  const run = () => {
+    confettiFn({ particleCount: 180, spread: 90, origin: { y: 0.55 }, colors: ['#b58a3c','#f0d9b5','#fff','#e94560','#4a90d9'] })
     setTimeout(() => confettiFn({ particleCount: 80, spread: 120, origin: { y: 0.4 }, startVelocity: 20 }), 400)
-    return
   }
-  if (confettiLoaded) return
-  confettiLoaded = true
-  const script = document.createElement('script')
-  script.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js'
-  script.onload = () => {
-    confettiFn = window.confetti
-    fireConfetti()
-  }
-  document.head.appendChild(script)
+  if (confettiFn) { run(); return }
+  const s = document.createElement('script')
+  s.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js'
+  s.onload = () => { confettiFn = window.confetti; run() }
+  document.head.appendChild(s)
 }
 
 export default function App() {
@@ -37,7 +32,7 @@ export default function App() {
   const [lastMove, setLastMove] = useState(null)
   const [castlingRights, setCastlingRights] = useState({
     white: { kingSide: true, queenSide: true },
-    black: { kingSide: true, queenSide: true }
+    black: { kingSide: true, queenSide: true },
   })
   const [enPassantTarget, setEnPassantTarget] = useState(null)
   const [promotionPending, setPromotionPending] = useState(null)
@@ -45,14 +40,14 @@ export default function App() {
   const [capturedPieces, setCapturedPieces] = useState({ white: [], black: [] })
   const [moveHistory, setMoveHistory] = useState([])
   const [opening, setOpening] = useState(null)
-  // drag state
+  const [flipped, setFlipped] = useState(false)
+  const [pieceSet, setPieceSet] = useState('cburnett')
   const dragSource = useRef(null)
+  const { playMove, playCapture, playCheck, playEnd } = useSound()
 
-  // Fire confetti when game ends in checkmate
   useEffect(() => {
-    if (gameStatus === 'checkmate') {
-      setTimeout(fireConfetti, 200)
-    }
+    if (gameStatus === 'checkmate') { setTimeout(fireConfetti, 200); playEnd() }
+    if (gameStatus === 'stalemate') { playEnd() }
   }, [gameStatus])
 
   const finishMove = useCallback((
@@ -74,14 +69,21 @@ export default function App() {
 
     if (captured) {
       setCapturedPieces(prev => ({ ...prev, [movingColor]: [...prev[movingColor], captured] }))
+      playCapture()
+    } else {
+      playMove()
     }
+
+    // check sound
+    const inCheckNext = isInCheck(nextState)
+    if (inCheckNext && status === 'playing') setTimeout(playCheck, 80)
 
     setMoveHistory(prev => {
       const updated = [...prev, { from: [fromRow, fromCol], to: [toRow, toCol] }]
       setOpening(detectOpening(updated))
       return updated
     })
-  }, [])
+  }, [playMove, playCapture, playCheck])
 
   const executeMove = useCallback((selRow, selCol, toRow, toCol, currentBoard, curPlayer, curCastling, curEnPassant, curLegalMoves) => {
     const move = curLegalMoves.find(m => m.to[0] === toRow && m.to[1] === toCol)
@@ -148,7 +150,6 @@ export default function App() {
       const [selRow, selCol] = selectedSquare
       const moved = executeMove(selRow, selCol, row, col, board, currentPlayer, castlingRights, enPassantTarget, legalMoves)
       if (moved) return
-
       if (piece && piece.color === currentPlayer) {
         setSelectedSquare([row, col])
         setLegalMoves(getLegalMoves(gameState, row, col))
@@ -158,27 +159,18 @@ export default function App() {
       setLegalMoves([])
       return
     }
-
     if (piece && piece.color === currentPlayer) {
       setSelectedSquare([row, col])
       setLegalMoves(getLegalMoves(gameState, row, col))
     }
   }
 
-  // Drag & drop handlers
   const onDragStart = useCallback((row, col) => {
     dragSource.current = { row, col }
-    // Compute legal moves at drag start so we can show them
     setSelectedSquare([row, col])
-    setLegalMoves(prev => {
-      // use functional update to avoid stale board — compute fresh
-      return prev
-    })
-    // We need fresh board/state here — set selected which triggers legalMoves via the state
     setBoard(prevBoard => {
-      const gameState = { board: prevBoard, currentPlayer, castlingRights, enPassantTarget }
-      const moves = getLegalMoves(gameState, row, col)
-      setLegalMoves(moves)
+      const gs = { board: prevBoard, currentPlayer, castlingRights, enPassantTarget }
+      setLegalMoves(getLegalMoves(gs, row, col))
       return prevBoard
     })
   }, [currentPlayer, castlingRights, enPassantTarget])
@@ -192,7 +184,6 @@ export default function App() {
     }
     const { row: selRow, col: selCol } = dragSource.current
     dragSource.current = null
-
     setBoard(prevBoard => {
       setLegalMoves(prevMoves => {
         executeMove(selRow, selCol, toRow, toCol, prevBoard, currentPlayer, castlingRights, enPassantTarget, prevMoves)
@@ -209,6 +200,12 @@ export default function App() {
     newBoard[row][col] = { type: pieceType, color, hasMoved: true }
     setPromotionPending(null)
     finishMove(newBoard, newCastling, newEnPassant, null, selRow, selCol, row, col, color)
+  }
+
+  const handleResign = () => {
+    if (gameStatus !== 'playing') return
+    playEnd()
+    setGameStatus('resigned')
   }
 
   const resetGame = () => {
@@ -232,18 +229,33 @@ export default function App() {
   return (
     <div className={styles.app}>
       <header className={styles.header}>
-        {/* New expressive SVG logo — stylised knight head */}
-        <svg className={styles.logo} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Chess">
-          <rect width="40" height="40" rx="8" fill="#1a1510"/>
-          <rect x="1" y="1" width="38" height="38" rx="7" stroke="#b58a3c" strokeWidth="1.5" fill="none"/>
-          {/* Knight silhouette */}
-          <path d="M13 30 L13 26 C13 26 10 24 10 20 C10 15 14 11 18 10 C18 10 17 12 18 13 C19 14 22 13 23 15 C24 17 22 18 21 19 L27 19 L27 30 Z" fill="#b58a3c"/>
-          <circle cx="16" cy="15" r="1.2" fill="#1a1510"/>
-          <line x1="13" y1="30" x2="27" y2="30" stroke="#b58a3c" strokeWidth="2" strokeLinecap="round"/>
+        {/* Clean geometric chess logo: two-tone board square with crown */}
+        <svg className={styles.logo} viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Chess">
+          <rect width="42" height="42" rx="9" fill="#1a1510"/>
+          {/* mini chessboard pattern */}
+          <rect x="6"  y="6"  width="7" height="7" rx="1" fill="#b58a3c"/>
+          <rect x="13" y="6"  width="7" height="7" rx="1" fill="#2a2420"/>
+          <rect x="20" y="6"  width="7" height="7" rx="1" fill="#b58a3c"/>
+          <rect x="27" y="6"  width="7" height="7" rx="1" fill="#2a2420"/>
+          <rect x="6"  y="13" width="7" height="7" rx="1" fill="#2a2420"/>
+          <rect x="13" y="13" width="7" height="7" rx="1" fill="#b58a3c"/>
+          <rect x="20" y="13" width="7" height="7" rx="1" fill="#2a2420"/>
+          <rect x="27" y="13" width="7" height="7" rx="1" fill="#b58a3c"/>
+          {/* queen silhouette over the board */}
+          <path d="M21 18 L23.5 23 L26 20 L25 26 L17 26 L16 20 L18.5 23 Z" fill="#f0d9b5" stroke="#b58a3c" strokeWidth="0.6"/>
+          <circle cx="21" cy="16.5" r="1.5" fill="#f0d9b5"/>
+          <circle cx="16.5" cy="18.5" r="1.2" fill="#f0d9b5"/>
+          <circle cx="25.5" cy="18.5" r="1.2" fill="#f0d9b5"/>
+          {/* base line */}
+          <rect x="15" y="27" width="12" height="2.5" rx="1.25" fill="#b58a3c"/>
+          {/* bottom strip */}
+          <rect x="6" y="32" width="30" height="4" rx="2" fill="#b58a3c" opacity="0.3"/>
         </svg>
         <h1 className={styles.title}>Chess</h1>
       </header>
+
       <OpeningBanner opening={opening} />
+
       <main className={styles.main}>
         <GameInfo
           currentPlayer={currentPlayer}
@@ -252,21 +264,35 @@ export default function App() {
           capturedPieces={capturedPieces}
           onReset={resetGame}
           moveHistory={moveHistory}
+          pieceSet={pieceSet}
         />
-        <Board
-          board={board}
-          selectedSquare={selectedSquare}
-          legalMoves={legalMoves}
-          lastMove={lastMove}
-          currentPlayer={currentPlayer}
-          inCheck={inCheck}
-          onSquareClick={onSquareClick}
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
-          promotionPending={promotionPending}
-          onPromotion={handlePromotion}
-          gameStatus={gameStatus}
-        />
+        <div className={styles.boardColumn}>
+          <BoardControls
+            flipped={flipped}
+            onFlip={() => setFlipped(f => !f)}
+            pieceSet={pieceSet}
+            onPieceSet={setPieceSet}
+            onResign={handleResign}
+            gameStatus={gameStatus}
+            currentPlayer={currentPlayer}
+          />
+          <Board
+            board={board}
+            selectedSquare={selectedSquare}
+            legalMoves={legalMoves}
+            lastMove={lastMove}
+            currentPlayer={currentPlayer}
+            inCheck={inCheck}
+            onSquareClick={onSquareClick}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            promotionPending={promotionPending}
+            onPromotion={handlePromotion}
+            gameStatus={gameStatus}
+            flipped={flipped}
+            pieceSet={pieceSet}
+          />
+        </div>
       </main>
     </div>
   )

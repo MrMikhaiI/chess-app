@@ -4,7 +4,7 @@
   align-items: center;
   min-height: 100dvh;
   padding: var(--space-6) var(--space-4) var(--space-10);
-  gap: var(--space-6);
+  gap: var(--space-5);
 }
 
 .header {
@@ -14,10 +14,10 @@
 }
 
 .logo {
-  width: 36px;
-  height: 36px;
-  border-radius: 6px;
+  width: 42px;
+  height: 42px;
   flex-shrink: 0;
+  filter: drop-shadow(0 2px 8px rgba(181,138,60,0.4));
 }
 
 .title {
@@ -36,10 +36,17 @@
   justify-content: center;
 }
 
+.boardColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 @media (max-width: 900px) {
   .main {
     flex-direction: column;
     align-items: center;
-    gap: var(--space-6);
+    gap: var(--space-5);
   }
 }

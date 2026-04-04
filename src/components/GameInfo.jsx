@@ -1,33 +1,31 @@
 import React from 'react'
 import styles from './GameInfo.module.css'
 
-const BASE = 'https://lichess1.org/assets/piece/cburnett'
-const PIECE_NAMES = {
-  white: { king:'wK', queen:'wQ', rook:'wR', bishop:'wB', knight:'wN', pawn:'wP' },
-  black: { king:'bK', queen:'bQ', rook:'bR', bishop:'bB', knight:'bN', pawn:'bP' },
-}
+const PIECE_LETTER = { king:'K', queen:'Q', rook:'R', bishop:'B', knight:'N', pawn:'P' }
 
 const STATUS_MESSAGES = {
   checkmate: (p) => `Checkmate! ${p === 'white' ? 'Black' : 'White'} wins! 🏆`,
   stalemate: () => 'Stalemate — Draw 🤝',
-  playing: (p, check) => check
+  resigned:  (p) => `${p === 'white' ? 'White' : 'Black'} resigned`,
+  playing:   (p, check) => check
     ? `${p === 'white' ? 'White' : 'Black'} — Check! ⚠️`
     : `${p === 'white' ? 'White' : 'Black'} to move`,
 }
 
-export default function GameInfo({ currentPlayer, gameStatus, inCheck, capturedPieces, onReset, moveHistory }) {
+export default function GameInfo({ currentPlayer, gameStatus, inCheck, capturedPieces, onReset, moveHistory, pieceSet = 'cburnett' }) {
   const statusMsg = gameStatus !== 'playing'
-    ? STATUS_MESSAGES[gameStatus](currentPlayer)
+    ? (STATUS_MESSAGES[gameStatus]?.(currentPlayer) ?? 'Game over')
     : STATUS_MESSAGES.playing(currentPlayer, inCheck)
 
   const renderCaptured = (color) => {
     const pieces = capturedPieces[color]
     if (!pieces.length) return <span className={styles.noCaptured}>—</span>
+    const colorChar = color === 'white' ? 'w' : 'b'
     return pieces.map((p, i) => (
       <img
         key={i}
         className={styles.capturedPiece}
-        src={`${BASE}/${PIECE_NAMES[p.color][p.type]}.svg`}
+        src={`https://lichess1.org/assets/piece/${pieceSet}/${colorChar}${PIECE_LETTER[p.type]}.svg`}
         alt={`${p.color} ${p.type}`}
         loading="lazy"
       />
