@@ -10,8 +10,8 @@
   grid-template-areas:
     "ranks board"
     ". files";
-  grid-template-columns: 20px 1fr;
-  grid-template-rows: 1fr 20px;
+  grid-template-columns: 22px 1fr;
+  grid-template-rows: 1fr 22px;
 }
 
 .board {
@@ -19,12 +19,12 @@
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   grid-template-rows: repeat(8, 1fr);
-  width: min(72vw, 560px);
-  height: min(72vw, 560px);
-  border-radius: var(--radius-md);
+  width: min(80vw, 640px);
+  height: min(80vw, 640px);
+  border-radius: 4px;
   overflow: hidden;
-  box-shadow: var(--shadow-lg);
-  border: 2px solid rgba(255,255,255,0.08);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
+  border: 3px solid #2a2a3e;
 }
 
 .coords {
@@ -33,14 +33,15 @@
   flex-direction: column;
   justify-content: space-around;
   align-items: center;
-  padding-bottom: 20px;
+  padding-bottom: 22px;
 }
 
 .coordRank, .coordFile {
-  font-size: 0.65rem;
-  color: var(--color-text-muted);
-  font-weight: 500;
+  font-size: 0.7rem;
+  color: rgba(200, 190, 170, 0.65);
+  font-weight: 600;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .coordsFile {
@@ -48,12 +49,12 @@
   display: flex;
   justify-content: space-around;
   align-items: center;
-  padding-left: 20px;
+  padding-left: 22px;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 700px) {
   .board {
-    width: min(90vw, 380px);
-    height: min(90vw, 380px);
+    width: min(95vw, 420px);
+    height: min(95vw, 420px);
   }
 }

@@ -1,5 +1,5 @@
 import React from 'react'
-import { PIECE_UNICODE } from '../engine/pieces.js'
+import Piece from './Piece.jsx'
 import styles from './PromotionModal.module.css'
 
 const PROMOTION_PIECES = ['queen', 'rook', 'bishop', 'knight']
@@ -17,7 +17,7 @@ export default function PromotionModal({ color, onSelect }) {
               onClick={() => onSelect(type)}
               aria-label={`Promote to ${type}`}
             >
-              <span className={styles.piece}>{PIECE_UNICODE[color][type]}</span>
+              <span className={styles.pieceWrap}><Piece type={type} color={color} /></span>
               <span className={styles.label}>{type.charAt(0).toUpperCase() + type.slice(1)}</span>
             </button>
           ))}

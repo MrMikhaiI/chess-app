@@ -1,5 +1,5 @@
 import React from 'react'
-import { PIECE_UNICODE } from '../engine/pieces.js'
+import Piece from './Piece.jsx'
 import styles from './Square.module.css'
 
 export default function Square({
@@ -25,11 +25,7 @@ export default function Square({
       {isLegalMove && (
         <span className={piece ? styles.captureDot : styles.moveDot} aria-hidden="true" />
       )}
-      {piece && (
-        <span className={`${styles.piece} ${styles[piece.color]}`} aria-hidden="true">
-          {PIECE_UNICODE[piece.color][piece.type]}
-        </span>
-      )}
+      {piece && <Piece type={piece.type} color={piece.color} />}
     </button>
   )
 }
