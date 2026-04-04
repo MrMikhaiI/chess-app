@@ -3,12 +3,15 @@ import Board from './components/Board.jsx'
 import GameInfo from './components/GameInfo.jsx'
 import OpeningBanner from './components/OpeningBanner.jsx'
 import BoardControls from './components/BoardControls.jsx'
+import TimeControl, { TIME_CONTROLS } from './components/TimeControl.jsx'
 import { createInitialBoard } from './engine/board.js'
 import { getLegalMoves } from './engine/moves.js'
 import { isInCheck, getGameStatus } from './engine/gameState.js'
 import { cloneBoard } from './engine/board.js'
 import { detectOpening } from './engine/openings.js'
 import { useSound } from './hooks/useSound.js'
+import { useTimer } from './hooks/useTimer.js'
+import { buildNotation } from './utils/notation.js'
 import styles from './App.module.css'
 
 let confettiFn = null
@@ -22,6 +25,14 @@ function fireConfetti() {
   s.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js'
   s.onload = () => { confettiFn = window.confetti; run() }
   document.head.appendChild(s)
+}
+
+const DEFAULT_TC = TIME_CONTROLS.find(t => t.label === '5+0')
+
+function makeTimes(tc) {
+  if (!tc || tc.minutes === null) return null
+  const ms = tc.minutes * 60 * 1000
+  return { white: ms, black: ms }
 }
 
 export default function App() {
@@ -38,37 +49,66 @@ export default function App() {
   const [promotionPending, setPromotionPending] = useState(null)
   const [gameStatus, setGameStatus] = useState('playing')
   const [capturedPieces, setCapturedPieces] = useState({ white: [], black: [] })
-  const [moveHistory, setMoveHistory] = useState([])
+  const [moveHistory, setMoveHistory] = useState([])   // raw move objects
+  const [notation, setNotation] = useState([])          // algebraic strings
+  // For jump-to-move: store board snapshots
+  const [snapshots, setSnapshots] = useState([])        // array of board states
+  const [currentMoveIdx, setCurrentMoveIdx] = useState(-1) // -1 = live
   const [opening, setOpening] = useState(null)
   const [flipped, setFlipped] = useState(false)
   const [pieceSet, setPieceSet] = useState('cburnett')
+  const [selectedTC, setSelectedTC] = useState(DEFAULT_TC)
+  const [times, setTimes] = useState(() => makeTimes(DEFAULT_TC))
   const dragSource = useRef(null)
   const { playMove, playCapture, playCheck, playEnd } = useSound()
 
-  // Always-fresh refs — drag handlers read these to avoid stale closure
-  const stateRef = useRef({
-    board,
-    currentPlayer,
-    castlingRights,
-    enPassantTarget,
-    gameStatus
-  })
+  // always-fresh state ref for drag handlers
+  const stateRef = useRef({ board, currentPlayer, castlingRights, enPassantTarget, gameStatus })
   useEffect(() => {
     stateRef.current = { board, currentPlayer, castlingRights, enPassantTarget, gameStatus }
   })
 
+  // timer
+  useTimer({ times, setTimes, currentPlayer, gameStatus, increment: selectedTC?.increment ?? 0 })
+
+  // timeout detection
+  useEffect(() => {
+    if (!times) return
+    if (times.white <= 0 && gameStatus === 'playing') {
+      playEnd()
+      fireConfetti()
+      setGameStatus('timeout')
+    } else if (times.black <= 0 && gameStatus === 'playing') {
+      playEnd()
+      fireConfetti()
+      setGameStatus('timeout')
+    }
+  }, [times, gameStatus])
+
   useEffect(() => {
     if (gameStatus === 'checkmate') { setTimeout(fireConfetti, 200); playEnd() }
     if (gameStatus === 'stalemate') { playEnd() }
+    if (gameStatus === 'resigned')  { setTimeout(fireConfetti, 200); playEnd() }
   }, [gameStatus])
 
   const finishMove = useCallback((
     newBoard, newCastling, newEnPassant,
-    captured, fromRow, fromCol, toRow, toCol, movingColor
+    captured, fromRow, fromCol, toRow, toCol, movingColor,
+    moveObj, boardBefore
   ) => {
     const nextPlayer = movingColor === 'white' ? 'black' : 'white'
     const nextState = { board: newBoard, currentPlayer: nextPlayer, castlingRights: newCastling, enPassantTarget: newEnPassant }
     const status = getGameStatus(nextState)
+    const inCheckNext = isInCheck(nextState)
+    const notationStatus = status === 'checkmate' ? 'checkmate' : inCheckNext ? 'check' : ''
+
+    // build algebraic notation
+    const alg = buildNotation(
+      { from: [fromRow, fromCol], to: [toRow, toCol], castling: moveObj?.castling, enPassant: moveObj?.enPassant, promotion: moveObj?.promotion },
+      boardBefore,
+      newBoard,
+      notationStatus
+    )
 
     setBoard(newBoard)
     setCastlingRights(newCastling)
@@ -86,7 +126,6 @@ export default function App() {
       playMove()
     }
 
-    const inCheckNext = isInCheck(nextState)
     if (inCheckNext && status === 'playing') setTimeout(playCheck, 80)
 
     setMoveHistory(prev => {
@@ -94,12 +133,16 @@ export default function App() {
       setOpening(detectOpening(updated))
       return updated
     })
+    setNotation(prev => [...prev, alg])
+    setSnapshots(prev => [...prev, cloneBoard(boardBefore)])
+    setCurrentMoveIdx(-1)
   }, [playMove, playCapture, playCheck])
 
   const executeMove = useCallback((selRow, selCol, toRow, toCol, curBoard, curPlayer, curCastling, curEnPassant, curLegalMoves) => {
     const move = curLegalMoves.find(m => m.to[0] === toRow && m.to[1] === toCol)
     if (!move) return false
 
+    const boardBefore = cloneBoard(curBoard)
     const newBoard = cloneBoard(curBoard)
     const movingPiece = { ...newBoard[selRow][selCol] }
     let captured = newBoard[toRow][toCol]
@@ -138,7 +181,7 @@ export default function App() {
 
     if (movingPiece.type === 'pawn' && (toRow === 0 || toRow === 7)) {
       setBoard(newBoard)
-      setPromotionPending({ row: toRow, col: toCol, color: curPlayer, newCastling, newEnPassant, captured, selRow, selCol })
+      setPromotionPending({ row: toRow, col: toCol, color: curPlayer, newCastling, newEnPassant, captured, selRow, selCol, move, boardBefore })
       setLastMove({ from: [selRow, selCol], to: [toRow, toCol] })
       setCastlingRights(newCastling)
       setEnPassantTarget(newEnPassant)
@@ -148,12 +191,14 @@ export default function App() {
       return true
     }
 
-    finishMove(newBoard, newCastling, newEnPassant, captured, selRow, selCol, toRow, toCol, curPlayer)
+    finishMove(newBoard, newCastling, newEnPassant, captured, selRow, selCol, toRow, toCol, curPlayer, move, boardBefore)
     return true
   }, [finishMove])
 
   const onSquareClick = (row, col) => {
     if (gameStatus !== 'playing') return
+    // if viewing history, return to live first
+    if (currentMoveIdx !== -1) { setCurrentMoveIdx(-1); return }
     const piece = board[row][col]
     const gameState = { board, currentPlayer, castlingRights, enPassantTarget }
 
@@ -177,14 +222,10 @@ export default function App() {
   }
 
   const onDragStart = useCallback((row, col) => {
-    // Snapshot fresh state synchronously from ref
+    if (stateRef.current.gameStatus !== 'playing') return
     const { board: b, currentPlayer: cp, castlingRights: cr, enPassantTarget: ep } = stateRef.current
     dragSource.current = {
-      row, col,
-      board: b,
-      currentPlayer: cp,
-      castlingRights: cr,
-      enPassantTarget: ep,
+      row, col, board: b, currentPlayer: cp, castlingRights: cr, enPassantTarget: ep,
       legalMoves: getLegalMoves({ board: b, currentPlayer: cp, castlingRights: cr, enPassantTarget: ep }, row, col)
     }
     setSelectedSquare([row, col])
@@ -202,17 +243,16 @@ export default function App() {
     dragSource.current = null
     setSelectedSquare(null)
     setLegalMoves([])
-    // All state was snapshotted at drag-start — no stale closure possible
     executeMove(selRow, selCol, toRow, toCol, b, cp, cr, ep, lm)
   }, [executeMove])
 
   const handlePromotion = (pieceType) => {
     if (!promotionPending) return
-    const { row, col, color, newCastling, newEnPassant, selRow, selCol } = promotionPending
+    const { row, col, color, newCastling, newEnPassant, selRow, selCol, move, boardBefore } = promotionPending
     const newBoard = cloneBoard(board)
     newBoard[row][col] = { type: pieceType, color, hasMoved: true }
     setPromotionPending(null)
-    finishMove(newBoard, newCastling, newEnPassant, null, selRow, selCol, row, col, color)
+    finishMove(newBoard, newCastling, newEnPassant, null, selRow, selCol, row, col, color, { ...move, promotion: pieceType }, boardBefore)
   }
 
   const handleResign = () => {
@@ -221,7 +261,18 @@ export default function App() {
     setGameStatus('resigned')
   }
 
-  const resetGame = () => {
+  const handleSelectTC = (tc) => {
+    setSelectedTC(tc)
+    setTimes(makeTimes(tc))
+    resetGame(tc)
+  }
+
+  const handleJumpToMove = (idx) => {
+    setCurrentMoveIdx(idx)
+  }
+
+  const resetGame = (tc) => {
+    const usedTC = tc ?? selectedTC
     setBoard(createInitialBoard())
     setCurrentPlayer('white')
     setSelectedSquare(null)
@@ -233,11 +284,20 @@ export default function App() {
     setGameStatus('playing')
     setCapturedPieces({ white: [], black: [] })
     setMoveHistory([])
+    setNotation([])
+    setSnapshots([])
+    setCurrentMoveIdx(-1)
     setOpening(null)
+    setTimes(makeTimes(usedTC))
   }
 
   const inCheck = gameStatus === 'playing' &&
     isInCheck({ board, currentPlayer, castlingRights, enPassantTarget })
+
+  // board to display: snapshot if viewing history, live otherwise
+  const displayBoard = currentMoveIdx >= 0 && snapshots[currentMoveIdx]
+    ? snapshots[currentMoveIdx]
+    : board
 
   return (
     <div className={styles.app}>
@@ -274,11 +334,20 @@ export default function App() {
           gameStatus={gameStatus}
           inCheck={inCheck}
           capturedPieces={capturedPieces}
-          onReset={resetGame}
-          moveHistory={moveHistory}
+          onReset={() => resetGame()}
+          notation={notation}
           pieceSet={pieceSet}
+          onJumpToMove={handleJumpToMove}
+          currentMoveIdx={currentMoveIdx}
         />
         <div className={styles.boardColumn}>
+          <TimeControl
+            times={times}
+            currentPlayer={currentPlayer}
+            gameStatus={gameStatus}
+            selectedControl={selectedTC}
+            onSelectControl={handleSelectTC}
+          />
           <BoardControls
             flipped={flipped}
             onFlip={() => setFlipped(f => !f)}
@@ -289,9 +358,9 @@ export default function App() {
             currentPlayer={currentPlayer}
           />
           <Board
-            board={board}
-            selectedSquare={selectedSquare}
-            legalMoves={legalMoves}
+            board={displayBoard}
+            selectedSquare={currentMoveIdx === -1 ? selectedSquare : null}
+            legalMoves={currentMoveIdx === -1 ? legalMoves : []}
             lastMove={lastMove}
             currentPlayer={currentPlayer}
             inCheck={inCheck}

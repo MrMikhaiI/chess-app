@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef, useEffect } from 'react'
 import styles from './GameInfo.module.css'
 
 const PIECE_LETTER = { king:'K', queen:'Q', rook:'R', bishop:'B', knight:'N', pawn:'P' }
@@ -6,16 +6,28 @@ const PIECE_LETTER = { king:'K', queen:'Q', rook:'R', bishop:'B', knight:'N', pa
 const STATUS_MESSAGES = {
   checkmate: (p) => `Checkmate! ${p === 'white' ? 'Black' : 'White'} wins! 🏆`,
   stalemate: () => 'Stalemate — Draw 🤝',
-  resigned:  (p) => `${p === 'white' ? 'White' : 'Black'} resigned`,
+  resigned:  (p) => `${p === 'white' ? 'White' : 'Black'} resigned. ${p === 'white' ? 'Black' : 'White'} wins! 🏆`,
+  timeout:   (p) => `${p === 'white' ? 'White' : 'Black'} ran out of time! ${p === 'white' ? 'Black' : 'White'} wins! ⏱️`,
   playing:   (p, check) => check
     ? `${p === 'white' ? 'White' : 'Black'} — Check! ⚠️`
     : `${p === 'white' ? 'White' : 'Black'} to move`,
 }
 
-export default function GameInfo({ currentPlayer, gameStatus, inCheck, capturedPieces, onReset, moveHistory, pieceSet = 'cburnett' }) {
+export default function GameInfo({
+  currentPlayer, gameStatus, inCheck,
+  capturedPieces, onReset, notation, pieceSet,
+  onJumpToMove, currentMoveIdx
+}) {
   const statusMsg = gameStatus !== 'playing'
     ? (STATUS_MESSAGES[gameStatus]?.(currentPlayer) ?? 'Game over')
     : STATUS_MESSAGES.playing(currentPlayer, inCheck)
+
+  const historyRef = useRef(null)
+  useEffect(() => {
+    if (historyRef.current) {
+      historyRef.current.scrollTop = historyRef.current.scrollHeight
+    }
+  }, [notation?.length])
 
   const renderCaptured = (color) => {
     const pieces = capturedPieces[color]
@@ -32,9 +44,19 @@ export default function GameInfo({ currentPlayer, gameStatus, inCheck, capturedP
     ))
   }
 
+  const pairs = []
+  if (notation) {
+    for (let i = 0; i < notation.length; i += 2) {
+      pairs.push({ w: notation[i], b: notation[i + 1], wi: i, bi: i + 1 })
+    }
+  }
+
   return (
     <aside className={styles.info}>
-      <div className={`${styles.statusBadge} ${gameStatus !== 'playing' ? styles.gameOver : inCheck ? styles.checkBadge : ''}`}>
+      <div className={`${styles.statusBadge} ${
+        gameStatus !== 'playing' ? styles.gameOver :
+        inCheck ? styles.checkBadge : ''
+      }`}>
         {gameStatus === 'playing' && (
           <span className={`${styles.dot} ${styles[currentPlayer]}`} aria-hidden="true" />
         )}
@@ -53,22 +75,34 @@ export default function GameInfo({ currentPlayer, gameStatus, inCheck, capturedP
         </div>
       </div>
 
-      {moveHistory.length > 0 && (
+      {pairs.length > 0 && (
         <div className={styles.section}>
-          <h2 className={styles.sectionTitle}>Moves ({moveHistory.length})</h2>
-          <div className={styles.history}>
-            {Array.from({ length: Math.ceil(moveHistory.length / 2) }, (_, i) => {
-              const w = moveHistory[i * 2]
-              const b = moveHistory[i * 2 + 1]
-              const toAlg = m => String.fromCharCode(97 + m.to[1]) + (8 - m.to[0])
-              return (
-                <div key={i} className={styles.moveRow}>
-                  <span className={styles.moveNum}>{i + 1}.</span>
-                  <span className={styles.moveWhite}>{w ? toAlg(w) : ''}</span>
-                  <span className={styles.moveBlack}>{b ? toAlg(b) : ''}</span>
-                </div>
-              )
-            })}
+          <h2 className={styles.sectionTitle}>Moves ({notation.length})</h2>
+          <div className={styles.history} ref={historyRef}>
+            {pairs.map(({ w, b, wi, bi }, i) => (
+              <div key={i} className={styles.moveRow}>
+                <span className={styles.moveNum}>{i + 1}.</span>
+                <button
+                  className={`${styles.moveBtn} ${styles.moveWhite} ${
+                    currentMoveIdx === wi ? styles.moveBtnActive : ''
+                  }`}
+                  onClick={() => onJumpToMove?.(wi)}
+                  title="Jump to this position"
+                >
+                  {w ?? ''}
+                </button>
+                <button
+                  className={`${styles.moveBtn} ${styles.moveBlack} ${
+                    b !== undefined && currentMoveIdx === bi ? styles.moveBtnActive : ''
+                  }`}
+                  onClick={() => b !== undefined && onJumpToMove?.(bi)}
+                  disabled={b === undefined}
+                  title="Jump to this position"
+                >
+                  {b ?? ''}
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       )}
