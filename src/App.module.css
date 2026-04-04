@@ -14,10 +14,10 @@
 }
 
 .logo {
-  width: 42px;
-  height: 42px;
+  width: 64px;
+  height: 64px;
   flex-shrink: 0;
-  filter: drop-shadow(0 2px 8px rgba(181,138,60,0.4));
+  filter: drop-shadow(0 3px 12px rgba(181,138,60,0.5));
 }
 
 .title {

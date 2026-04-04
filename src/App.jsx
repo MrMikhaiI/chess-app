@@ -45,6 +45,19 @@ export default function App() {
   const dragSource = useRef(null)
   const { playMove, playCapture, playCheck, playEnd } = useSound()
 
+  // Always-fresh refs for drag handler (avoid stale closure)
+  const boardRef        = useRef(board)
+  const currentPlayerRef = useRef(currentPlayer)
+  const castlingRef     = useRef(castlingRights)
+  const enPassantRef    = useRef(enPassantTarget)
+  const legalMovesRef   = useRef(legalMoves)
+
+  useEffect(() => { boardRef.current        = board },          [board])
+  useEffect(() => { currentPlayerRef.current = currentPlayer }, [currentPlayer])
+  useEffect(() => { castlingRef.current     = castlingRights }, [castlingRights])
+  useEffect(() => { enPassantRef.current    = enPassantTarget }, [enPassantTarget])
+  useEffect(() => { legalMovesRef.current   = legalMoves },     [legalMoves])
+
   useEffect(() => {
     if (gameStatus === 'checkmate') { setTimeout(fireConfetti, 200); playEnd() }
     if (gameStatus === 'stalemate') { playEnd() }
@@ -74,7 +87,6 @@ export default function App() {
       playMove()
     }
 
-    // check sound
     const inCheckNext = isInCheck(nextState)
     if (inCheckNext && status === 'playing') setTimeout(playCheck, 80)
 
@@ -165,15 +177,20 @@ export default function App() {
     }
   }
 
+  // Use refs so drag callbacks always read fresh state, no stale closure
   const onDragStart = useCallback((row, col) => {
     dragSource.current = { row, col }
     setSelectedSquare([row, col])
-    setBoard(prevBoard => {
-      const gs = { board: prevBoard, currentPlayer, castlingRights, enPassantTarget }
-      setLegalMoves(getLegalMoves(gs, row, col))
-      return prevBoard
-    })
-  }, [currentPlayer, castlingRights, enPassantTarget])
+    const gs = {
+      board: boardRef.current,
+      currentPlayer: currentPlayerRef.current,
+      castlingRights: castlingRef.current,
+      enPassantTarget: enPassantRef.current
+    }
+    const moves = getLegalMoves(gs, row, col)
+    setLegalMoves(moves)
+    legalMovesRef.current = moves
+  }, [])
 
   const onDragEnd = useCallback((toRow, toCol) => {
     if (toRow === null || !dragSource.current) {
@@ -184,14 +201,18 @@ export default function App() {
     }
     const { row: selRow, col: selCol } = dragSource.current
     dragSource.current = null
-    setBoard(prevBoard => {
-      setLegalMoves(prevMoves => {
-        executeMove(selRow, selCol, toRow, toCol, prevBoard, currentPlayer, castlingRights, enPassantTarget, prevMoves)
-        return []
-      })
-      return prevBoard
-    })
-  }, [currentPlayer, castlingRights, enPassantTarget, executeMove])
+    // Read fresh state from refs — no stale closure
+    executeMove(
+      selRow, selCol, toRow, toCol,
+      boardRef.current,
+      currentPlayerRef.current,
+      castlingRef.current,
+      enPassantRef.current,
+      legalMovesRef.current
+    )
+    setSelectedSquare(null)
+    setLegalMoves([])
+  }, [executeMove])
 
   const handlePromotion = (pieceType) => {
     if (!promotionPending) return
@@ -229,27 +250,29 @@ export default function App() {
   return (
     <div className={styles.app}>
       <header className={styles.header}>
-        {/* Clean geometric chess logo: two-tone board square with crown */}
-        <svg className={styles.logo} viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Chess">
-          <rect width="42" height="42" rx="9" fill="#1a1510"/>
-          {/* mini chessboard pattern */}
-          <rect x="6"  y="6"  width="7" height="7" rx="1" fill="#b58a3c"/>
-          <rect x="13" y="6"  width="7" height="7" rx="1" fill="#2a2420"/>
-          <rect x="20" y="6"  width="7" height="7" rx="1" fill="#b58a3c"/>
-          <rect x="27" y="6"  width="7" height="7" rx="1" fill="#2a2420"/>
-          <rect x="6"  y="13" width="7" height="7" rx="1" fill="#2a2420"/>
-          <rect x="13" y="13" width="7" height="7" rx="1" fill="#b58a3c"/>
-          <rect x="20" y="13" width="7" height="7" rx="1" fill="#2a2420"/>
-          <rect x="27" y="13" width="7" height="7" rx="1" fill="#b58a3c"/>
-          {/* queen silhouette over the board */}
-          <path d="M21 18 L23.5 23 L26 20 L25 26 L17 26 L16 20 L18.5 23 Z" fill="#f0d9b5" stroke="#b58a3c" strokeWidth="0.6"/>
-          <circle cx="21" cy="16.5" r="1.5" fill="#f0d9b5"/>
-          <circle cx="16.5" cy="18.5" r="1.2" fill="#f0d9b5"/>
-          <circle cx="25.5" cy="18.5" r="1.2" fill="#f0d9b5"/>
-          {/* base line */}
-          <rect x="15" y="27" width="12" height="2.5" rx="1.25" fill="#b58a3c"/>
-          {/* bottom strip */}
-          <rect x="6" y="32" width="30" height="4" rx="2" fill="#b58a3c" opacity="0.3"/>
+        <svg className={styles.logo} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Chess">
+          <rect width="64" height="64" rx="13" fill="#1a1510"/>
+          {/* chessboard pattern */}
+          <rect x="8"  y="8"  width="11" height="11" rx="1.5" fill="#b58a3c"/>
+          <rect x="19" y="8"  width="11" height="11" rx="1.5" fill="#2a2420"/>
+          <rect x="30" y="8"  width="11" height="11" rx="1.5" fill="#b58a3c"/>
+          <rect x="41" y="8"  width="11" height="11" rx="1.5" fill="#2a2420"/>
+          <rect x="8"  y="19" width="11" height="11" rx="1.5" fill="#2a2420"/>
+          <rect x="19" y="19" width="11" height="11" rx="1.5" fill="#b58a3c"/>
+          <rect x="30" y="19" width="11" height="11" rx="1.5" fill="#2a2420"/>
+          <rect x="41" y="19" width="11" height="11" rx="1.5" fill="#b58a3c"/>
+          <rect x="8"  y="30" width="11" height="11" rx="1.5" fill="#b58a3c"/>
+          <rect x="19" y="30" width="11" height="11" rx="1.5" fill="#2a2420"/>
+          <rect x="30" y="30" width="11" height="11" rx="1.5" fill="#b58a3c"/>
+          <rect x="41" y="30" width="11" height="11" rx="1.5" fill="#2a2420"/>
+          {/* queen silhouette */}
+          <circle cx="32" cy="22" r="3" fill="#f0d9b5"/>
+          <circle cx="22" cy="26" r="2.2" fill="#f0d9b5"/>
+          <circle cx="42" cy="26" r="2.2" fill="#f0d9b5"/>
+          <path d="M22 36 L24 28 L28 33 L32 24 L36 33 L40 28 L42 36 Z" fill="#f0d9b5" stroke="#b58a3c" strokeWidth="0.8"/>
+          <rect x="21" y="37" width="22" height="4" rx="2" fill="#b58a3c"/>
+          {/* bottom accent strip */}
+          <rect x="8" y="48" width="48" height="7" rx="3.5" fill="#b58a3c" opacity="0.35"/>
         </svg>
         <h1 className={styles.title}>Chess</h1>
       </header>

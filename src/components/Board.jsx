@@ -16,8 +16,13 @@ export default function Board({
   const boardRef = useRef(null)
   const legalMoveSet = new Set(legalMoves.map(m => `${m.to[0]}-${m.to[1]}`))
 
-  const rows = flipped ? [0,1,2,3,4,5,6,7] : [7,6,5,4,3,2,1,0]
-  const cols = flipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7]
+  // rows: without flip white (row=7) is at bottom, so render 7→0 top-to-bottom
+  // ranks (labels): without flip bottom=rank1, top=rank8, so rows[0]=7→rank1...rows[7]=0→rank8
+  // displayed top-to-bottom means rank labels top-to-bottom are: 8,7,6,5,4,3,2,1 (no flip)
+  // With flip: rows render 0→7, rank labels top-to-bottom: 1,2,3,4,5,6,7,8
+  const rows  = flipped ? [0,1,2,3,4,5,6,7] : [7,6,5,4,3,2,1,0]
+  const cols  = flipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7]
+  // rank label for each rendered row position (top→bottom)
   const ranks = flipped ? [1,2,3,4,5,6,7,8] : [8,7,6,5,4,3,2,1]
   const files = flipped ? ['h','g','f','e','d','c','b','a'] : ['a','b','c','d','e','f','g','h']
 
@@ -35,6 +40,11 @@ export default function Board({
   const pieceUrl = (piece) =>
     `https://lichess1.org/assets/piece/${pieceSet}/${piece.color === 'white' ? 'w' : 'b'}${PIECE_LETTER[piece.type]}.svg`
 
+  // Standard chess: a1 (col=0, row=7) is dark. (row+col) odd → dark, even → light
+  // a1: row=7,col=0 → 7+0=7 odd → dark ✓
+  // a8: row=0,col=0 → 0+0=0 even → light ✓
+  const isLight = (r, c) => (r + c) % 2 === 0
+
   return (
     <div className={styles.boardWrapper}>
       <div className={styles.boardContainer}>
@@ -51,7 +61,7 @@ export default function Board({
                   piece={piece}
                   row={r}
                   col={c}
-                  isLight={(r + c) % 2 === 0}
+                  isLight={isLight(r, c)}
                   isSelected={selectedSquare?.[0] === r && selectedSquare?.[1] === c}
                   isLegalMove={legalMoveSet.has(`${r}-${c}`)}
                   isLastMove={isLastMove(r, c)}
