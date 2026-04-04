@@ -45,18 +45,17 @@ export default function App() {
   const dragSource = useRef(null)
   const { playMove, playCapture, playCheck, playEnd } = useSound()
 
-  // Always-fresh refs for drag handler (avoid stale closure)
-  const boardRef        = useRef(board)
-  const currentPlayerRef = useRef(currentPlayer)
-  const castlingRef     = useRef(castlingRights)
-  const enPassantRef    = useRef(enPassantTarget)
-  const legalMovesRef   = useRef(legalMoves)
-
-  useEffect(() => { boardRef.current        = board },          [board])
-  useEffect(() => { currentPlayerRef.current = currentPlayer }, [currentPlayer])
-  useEffect(() => { castlingRef.current     = castlingRights }, [castlingRights])
-  useEffect(() => { enPassantRef.current    = enPassantTarget }, [enPassantTarget])
-  useEffect(() => { legalMovesRef.current   = legalMoves },     [legalMoves])
+  // Always-fresh refs — drag handlers read these to avoid stale closure
+  const stateRef = useRef({
+    board,
+    currentPlayer,
+    castlingRights,
+    enPassantTarget,
+    gameStatus
+  })
+  useEffect(() => {
+    stateRef.current = { board, currentPlayer, castlingRights, enPassantTarget, gameStatus }
+  })
 
   useEffect(() => {
     if (gameStatus === 'checkmate') { setTimeout(fireConfetti, 200); playEnd() }
@@ -97,11 +96,11 @@ export default function App() {
     })
   }, [playMove, playCapture, playCheck])
 
-  const executeMove = useCallback((selRow, selCol, toRow, toCol, currentBoard, curPlayer, curCastling, curEnPassant, curLegalMoves) => {
+  const executeMove = useCallback((selRow, selCol, toRow, toCol, curBoard, curPlayer, curCastling, curEnPassant, curLegalMoves) => {
     const move = curLegalMoves.find(m => m.to[0] === toRow && m.to[1] === toCol)
     if (!move) return false
 
-    const newBoard = cloneBoard(currentBoard)
+    const newBoard = cloneBoard(curBoard)
     const movingPiece = { ...newBoard[selRow][selCol] }
     let captured = newBoard[toRow][toCol]
     let newEnPassant = null
@@ -177,19 +176,19 @@ export default function App() {
     }
   }
 
-  // Use refs so drag callbacks always read fresh state, no stale closure
   const onDragStart = useCallback((row, col) => {
-    dragSource.current = { row, col }
-    setSelectedSquare([row, col])
-    const gs = {
-      board: boardRef.current,
-      currentPlayer: currentPlayerRef.current,
-      castlingRights: castlingRef.current,
-      enPassantTarget: enPassantRef.current
+    // Snapshot fresh state synchronously from ref
+    const { board: b, currentPlayer: cp, castlingRights: cr, enPassantTarget: ep } = stateRef.current
+    dragSource.current = {
+      row, col,
+      board: b,
+      currentPlayer: cp,
+      castlingRights: cr,
+      enPassantTarget: ep,
+      legalMoves: getLegalMoves({ board: b, currentPlayer: cp, castlingRights: cr, enPassantTarget: ep }, row, col)
     }
-    const moves = getLegalMoves(gs, row, col)
-    setLegalMoves(moves)
-    legalMovesRef.current = moves
+    setSelectedSquare([row, col])
+    setLegalMoves(dragSource.current.legalMoves)
   }, [])
 
   const onDragEnd = useCallback((toRow, toCol) => {
@@ -199,19 +198,12 @@ export default function App() {
       setLegalMoves([])
       return
     }
-    const { row: selRow, col: selCol } = dragSource.current
+    const { row: selRow, col: selCol, board: b, currentPlayer: cp, castlingRights: cr, enPassantTarget: ep, legalMoves: lm } = dragSource.current
     dragSource.current = null
-    // Read fresh state from refs — no stale closure
-    executeMove(
-      selRow, selCol, toRow, toCol,
-      boardRef.current,
-      currentPlayerRef.current,
-      castlingRef.current,
-      enPassantRef.current,
-      legalMovesRef.current
-    )
     setSelectedSquare(null)
     setLegalMoves([])
+    // All state was snapshotted at drag-start — no stale closure possible
+    executeMove(selRow, selCol, toRow, toCol, b, cp, cr, ep, lm)
   }, [executeMove])
 
   const handlePromotion = (pieceType) => {
@@ -252,7 +244,6 @@ export default function App() {
       <header className={styles.header}>
         <svg className={styles.logo} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Chess">
           <rect width="64" height="64" rx="13" fill="#1a1510"/>
-          {/* chessboard pattern */}
           <rect x="8"  y="8"  width="11" height="11" rx="1.5" fill="#b58a3c"/>
           <rect x="19" y="8"  width="11" height="11" rx="1.5" fill="#2a2420"/>
           <rect x="30" y="8"  width="11" height="11" rx="1.5" fill="#b58a3c"/>
@@ -265,13 +256,11 @@ export default function App() {
           <rect x="19" y="30" width="11" height="11" rx="1.5" fill="#2a2420"/>
           <rect x="30" y="30" width="11" height="11" rx="1.5" fill="#b58a3c"/>
           <rect x="41" y="30" width="11" height="11" rx="1.5" fill="#2a2420"/>
-          {/* queen silhouette */}
           <circle cx="32" cy="22" r="3" fill="#f0d9b5"/>
           <circle cx="22" cy="26" r="2.2" fill="#f0d9b5"/>
           <circle cx="42" cy="26" r="2.2" fill="#f0d9b5"/>
           <path d="M22 36 L24 28 L28 33 L32 24 L36 33 L40 28 L42 36 Z" fill="#f0d9b5" stroke="#b58a3c" strokeWidth="0.8"/>
           <rect x="21" y="37" width="22" height="4" rx="2" fill="#b58a3c"/>
-          {/* bottom accent strip */}
           <rect x="8" y="48" width="48" height="7" rx="3.5" fill="#b58a3c" opacity="0.35"/>
         </svg>
         <h1 className={styles.title}>Chess</h1>

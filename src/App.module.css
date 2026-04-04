@@ -4,20 +4,28 @@
   align-items: center;
   min-height: 100dvh;
   padding: var(--space-6) var(--space-4) var(--space-10);
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .header {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  /* header is self-contained — never overlaps board */
+  position: static;
+  z-index: auto;
 }
 
 .logo {
   width: 64px;
   height: 64px;
   flex-shrink: 0;
-  filter: drop-shadow(0 3px 12px rgba(181,138,60,0.5));
+  filter: drop-shadow(0 3px 10px rgba(181,138,60,0.45));
 }
 
 .title {
