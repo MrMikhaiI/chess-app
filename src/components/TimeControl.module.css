@@ -7,7 +7,7 @@
 
 .clocks {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-3);
   justify-content: center;
 }
 
@@ -15,14 +15,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   border: 2px solid var(--color-border);
   font-variant-numeric: tabular-nums;
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   font-weight: 700;
-  min-width: 90px;
+  min-width: 110px;
   justify-content: center;
   transition: border-color 200ms ease, background 200ms ease, color 200ms ease;
   color: var(--color-text-muted);
@@ -67,7 +67,8 @@
   border: 1px solid var(--color-border);
   cursor: pointer;
   transition: background 140ms, color 140ms, border-color 140ms;
-  min-width: 36px;
+  min-width: 40px;
+  min-height: 30px;
   text-align: center;
 }
 
@@ -81,4 +82,13 @@
   color: #1a1510 !important;
   border-color: var(--color-primary) !important;
   font-weight: 700;
+}
+
+/* Mobile: slightly smaller clocks */
+@media (max-width: 860px) {
+  .clock {
+    font-size: var(--text-lg);
+    min-width: 90px;
+    padding: var(--space-2) var(--space-3);
+  }
 }

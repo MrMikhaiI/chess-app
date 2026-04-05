@@ -1,8 +1,9 @@
+/* Desktop: fixed sidebar width */
 .info {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  width: 220px;
+  gap: var(--space-3);
+  width: 240px;
   flex-shrink: 0;
 }
 
@@ -82,7 +83,7 @@
 .noCaptured     { font-size: var(--text-xs); color: var(--color-text-faint); }
 
 .history {
-  max-height: 240px;
+  max-height: 260px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--color-surface-dynamic) transparent;
@@ -136,7 +137,7 @@
   font-size: var(--text-sm);
   font-weight: 700;
   transition: background 140ms ease, transform 140ms ease, box-shadow 140ms ease;
-  min-height: 46px;
+  min-height: 44px;
   text-align: center;
   width: 100%;
   letter-spacing: 0.02em;
@@ -149,14 +150,23 @@
 }
 .resetBtn:active { transform: translateY(0); box-shadow: none; }
 
-@media (max-width: 900px) {
+/* Mobile: horizontal strip below board */
+@media (max-width: 860px) {
   .info {
     flex-direction: row;
     flex-wrap: wrap;
     width: 100%;
-    max-width: min(80vw, 640px);
+    max-width: clamp(280px, calc(100vw - 56px), 560px);
+    gap: var(--space-2);
   }
+
   .statusBadge { flex: 1 1 100%; }
-  .section { flex: 1 1 calc(50% - var(--space-2)); }
+
+  /* Captured + Moves side by side */
+  .section { flex: 1 1 calc(50% - var(--space-2)); min-width: 120px; }
+
+  /* Moves list shorter on mobile */
+  .history { max-height: 120px; }
+
   .resetBtn { flex: 1 1 100%; }
 }
