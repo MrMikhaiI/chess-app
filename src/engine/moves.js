@@ -121,9 +121,12 @@ function getPseudoMoves(gameState, row, col) {
         if (inBounds(r, c) && (isEmpty(r, c) || isEnemy(r, c))) addMove(r, c)
       }
 
-      const rights = castlingRights[currentPlayer]
-      const castleRow = currentPlayer === 'white' ? 7 : 0
-      if (!piece.hasMoved && row === castleRow) {
+      // Castling: king must not currently be in check (FIDE rule)
+      const currentlyInCheck = isInCheck({ board, currentPlayer, castlingRights, enPassantTarget })
+      if (!currentlyInCheck && !piece.hasMoved && row === (currentPlayer === 'white' ? 7 : 0)) {
+        const rights = castlingRights[currentPlayer]
+        const castleRow = currentPlayer === 'white' ? 7 : 0
+
         if (rights.kingSide &&
             isEmpty(castleRow, 5) && isEmpty(castleRow, 6) &&
             board[castleRow][7]?.type === 'rook' && !board[castleRow][7].hasMoved) {
@@ -134,6 +137,7 @@ function getPseudoMoves(gameState, row, col) {
             addMove(castleRow, 6, { castling: 'kingSide' })
           }
         }
+
         if (rights.queenSide &&
             isEmpty(castleRow, 1) && isEmpty(castleRow, 2) && isEmpty(castleRow, 3) &&
             board[castleRow][0]?.type === 'rook' && !board[castleRow][0].hasMoved) {
